@@ -16,6 +16,7 @@ from qdrant_client.models import Distance, PayloadSchemaType, PointStruct, Vecto
 from tqdm import tqdm
 
 from airag.chunking import chunk_file
+from airag.manifest import delete_source, get_source, list_stale_paths, open_manifest, upsert_source
 
 logging.basicConfig(
     stream=sys.stderr,
@@ -127,15 +128,14 @@ def scan_directory(corpus_dir: Path) -> list[Path]:
     return files
 
 
-def embed_batch(texts: list[str], embed_url: str) -> list[list[float]]:
+def embed_batch(texts: list[str], embed_url: str, client: httpx.Client) -> list[list[float]]:
     """Embed a batch of texts via TEI synchronously."""
-    with httpx.Client(timeout=60.0) as client:
-        resp = client.post(
-            f"{embed_url}/embed",
-            json={"inputs": texts},
-        )
-        resp.raise_for_status()
-        return resp.json()
+    resp = client.post(
+        f"{embed_url}/embed",
+        json={"inputs": texts},
+    )
+    resp.raise_for_status()
+    return resp.json()
 
 
 def load_state(state_path: Path) -> dict:
@@ -213,32 +213,49 @@ def ingest(
     embed_url: str = "http://localhost:8081",
     collection: str = "corpus",
     batch_size: int = 32,
+    delete_missing: bool = False,
 ):
     """Run the full ingestion pipeline."""
     start = time.time()
+    upsert_batch_size = 200
 
     client = QdrantClient(url=qdrant_url)
 
     # Ensure the collection exists before any upserts
     ensure_collection(client, collection)
 
-    state_path = corpus_dir / ".airag_state.json"
-    state = load_state(state_path)
+    manifest_path = corpus_dir / ".airag_manifest.db"
+    conn = open_manifest(manifest_path)
 
     # Scan files
     logger.info("Scanning %s ...", corpus_dir)
     files = scan_directory(corpus_dir)
     logger.info("Found %d files", len(files))
 
+    # Delete stale sources if requested
+    if delete_missing:
+        current_paths = {str(f) for f in files}
+        stale = list_stale_paths(conn, current_paths)
+        for sp in stale:
+            point_ids = delete_source(conn, sp)
+            if point_ids:
+                int_ids = [int(pid) for pid in point_ids]
+                client.delete(collection_name=collection, points_selector=int_ids)
+            logger.info("Deleted stale source: %s (%d chunks)", sp, len(point_ids))
+        if stale:
+            logger.info("Removed %d stale sources", len(stale))
+
     # Filter unchanged files
     new_files = []
     for f in files:
         fh = file_hash(f)
-        if state.get(str(f)) != fh:
+        src = get_source(conn, str(f))
+        if src is None or src["content_hash"] != fh:
             new_files.append((f, fh))
 
     if not new_files:
         logger.info("No new or changed files. Nothing to do.")
+        conn.close()
         return
 
     logger.info(
@@ -247,84 +264,78 @@ def ingest(
         len(files) - len(new_files),
     )
 
-    # Process files: parse + chunk
-    all_chunks = []
-    for path, fh in tqdm(new_files, desc="Chunking", file=sys.stderr):
-        try:
-            chunks = chunk_file(path)
-            all_chunks.extend(chunks)
-        except Exception as e:
-            logger.warning("Failed to chunk %s: %s", path, e)
-            continue
+    # Streaming per-file loop: chunk → embed → upsert → record
+    total_chunks = 0
+    total_files = 0
 
-    logger.info("Generated %d chunks from %d files", len(all_chunks), len(new_files))
+    embed_client = httpx.Client(timeout=120.0)
+    try:
+        for path, fh in tqdm(new_files, desc="Ingesting", file=sys.stderr):
+            try:
+                chunks = chunk_file(path)
+            except Exception as e:
+                logger.warning("Failed to chunk %s: %s", path, e)
+                continue
 
-    if not all_chunks:
-        logger.info("No chunks generated. Nothing to upsert.")
-        return
+            if not chunks:
+                continue
 
-    # Embed in batches
-    logger.info("Embedding %d chunks in batches of %d ...", len(all_chunks), batch_size)
-    all_vectors = []
-    texts = [c["text"] for c in all_chunks]
+            # Delete old Qdrant points if file was previously ingested
+            old_point_ids = delete_source(conn, str(path))
+            if old_point_ids:
+                int_ids = [int(pid) for pid in old_point_ids]
+                client.delete(collection_name=collection, points_selector=int_ids)
 
-    for i in tqdm(range(0, len(texts), batch_size), desc="Embedding", file=sys.stderr):
-        batch = texts[i : i + batch_size]
-        try:
-            vectors = embed_batch(batch, embed_url)
-            all_vectors.extend(vectors)
-        except Exception as e:
-            logger.error("Embedding failed at batch %d: %s", i // batch_size, e)
-            raise
+            # Embed this file's chunks in batches
+            file_vectors = []
+            texts = [c["text"] for c in chunks]
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i : i + batch_size]
+                vectors = embed_batch(batch, embed_url, embed_client)
+                file_vectors.extend(vectors)
 
-    # Upsert to Qdrant in batches
-    logger.info("Upserting %d points to Qdrant ...", len(all_chunks))
-    upsert_batch_size = 100
+            # Upsert this file's points to Qdrant
+            chunk_ids = []
+            point_ids = []
+            for j in range(0, len(chunks), upsert_batch_size):
+                batch_chunks = chunks[j : j + upsert_batch_size]
+                batch_vectors = file_vectors[j : j + upsert_batch_size]
+                points = []
+                for chunk, vector in zip(batch_chunks, batch_vectors):
+                    point_id = int(
+                        hashlib.sha256(chunk["chunk_id"].encode()).hexdigest()[:16], 16
+                    ) % (2**63)
+                    rel_path = os.path.relpath(chunk["file_path"], corpus_dir)
+                    payload = {
+                        "chunk_id": chunk["chunk_id"],
+                        "file_path": rel_path,
+                        "file_type": chunk["file_type"],
+                        "language": chunk.get("language"),
+                        "symbol": chunk.get("symbol"),
+                        "heading_path": chunk.get("heading_path"),
+                        "json_path": chunk.get("json_path"),
+                        "chunk_index": chunk["chunk_index"],
+                        "token_count": chunk["token_count"],
+                        "text": chunk["text"],
+                    }
+                    points.append(PointStruct(id=point_id, vector=vector, payload=payload))
+                    chunk_ids.append(chunk["chunk_id"])
+                    point_ids.append(str(point_id))
+                client.upsert(collection_name=collection, points=points)
 
-    for i in tqdm(
-        range(0, len(all_chunks), upsert_batch_size), desc="Upserting", file=sys.stderr
-    ):
-        batch_chunks = all_chunks[i : i + upsert_batch_size]
-        batch_vectors = all_vectors[i : i + upsert_batch_size]
-
-        points = []
-        for j, (chunk, vector) in enumerate(zip(batch_chunks, batch_vectors)):
-            # Use chunk_id as a UUID-like identifier
-            # Qdrant needs int or UUID ids — use hash
-            point_id = int(
-                hashlib.sha256(chunk["chunk_id"].encode()).hexdigest()[:16], 16
-            ) % (2**63)
-
-            # Store paths relative to corpus dir to avoid leaking absolute paths
-            rel_path = os.path.relpath(chunk["file_path"], corpus_dir)
-
-            payload = {
-                "chunk_id": chunk["chunk_id"],
-                "file_path": rel_path,
-                "file_type": chunk["file_type"],
-                "language": chunk.get("language"),
-                "symbol": chunk.get("symbol"),
-                "heading_path": chunk.get("heading_path"),
-                "json_path": chunk.get("json_path"),
-                "chunk_index": chunk["chunk_index"],
-                "token_count": chunk["token_count"],
-                "text": chunk["text"],
-            }
-
-            points.append(PointStruct(id=point_id, vector=vector, payload=payload))
-
-        client.upsert(collection_name=collection, points=points)
-
-    # Update state
-    for path, fh in new_files:
-        state[str(path)] = fh
-    save_state(state_path, state)
+            # Record in manifest
+            upsert_source(conn, str(path), fh, chunks[0]["file_type"], chunk_ids, point_ids)
+            total_chunks += len(chunks)
+            total_files += 1
+    finally:
+        embed_client.close()
+        conn.close()
 
     elapsed = time.time() - start
     logger.info(
         "Ingestion complete: %d files, %d chunks, %.1f seconds",
-        len(new_files),
-        len(all_chunks),
+        total_files,
+        total_chunks,
         elapsed,
     )
 
@@ -342,6 +353,11 @@ def main():
     )
     parser.add_argument("--collection", default="corpus")
     parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument(
+        "--delete-missing",
+        action="store_true",
+        help="Remove sources from manifest and Qdrant that no longer exist on disk",
+    )
     args = parser.parse_args()
 
     ingest(
@@ -350,6 +366,7 @@ def main():
         embed_url=args.embed_url,
         collection=args.collection,
         batch_size=args.batch_size,
+        delete_missing=args.delete_missing,
     )
 
 

@@ -26,7 +26,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    command: --model-id Qwen/Qwen3-Embedding-0.6B --port 80
+    command: --model-id Qwen/Qwen3-Embedding-0.6B --port 80 --max-batch-tokens 65536
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health"]
       interval: 30s
