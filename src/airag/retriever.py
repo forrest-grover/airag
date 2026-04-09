@@ -14,7 +14,6 @@ class Retriever:
 
     def __init__(self):
         self._qdrant: QdrantClient | None = None
-        self._http: httpx.AsyncClient | None = None
         self._qdrant_url = os.environ.get("QDRANT_URL", "http://localhost:6333")
         self._embed_url = os.environ.get("TEI_EMBED_URL", "http://localhost:8081")
         self._rerank_url = os.environ.get("TEI_RERANK_URL", "http://localhost:8082")
@@ -27,20 +26,15 @@ class Retriever:
             self._qdrant = QdrantClient(url=self._qdrant_url)
         return self._qdrant
 
-    @property
-    def http(self) -> httpx.AsyncClient:
-        if self._http is None:
-            self._http = httpx.AsyncClient(timeout=30.0)
-        return self._http
-
     async def embed(self, text: str) -> list[float]:
         """Embed a single text via TEI."""
-        resp = await self.http.post(
-            f"{self._embed_url}/embed",
-            json={"inputs": text},
-        )
-        resp.raise_for_status()
-        return resp.json()[0]
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{self._embed_url}/embed",
+                json={"inputs": text},
+            )
+            resp.raise_for_status()
+            return resp.json()[0]
 
     async def search(self, query: str, k: int = 5, filters: dict | None = None) -> list[dict]:
         """Embed query, search Qdrant, rerank, return top-k chunks."""
@@ -103,11 +97,12 @@ class Retriever:
             return chunks
 
         texts = [c["text"] for c in chunks]
-        resp = await self.http.post(
-            f"{self._rerank_url}/rerank",
-            json={"query": query, "texts": texts, "return_text": False},
-        )
-        resp.raise_for_status()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{self._rerank_url}/rerank",
+                json={"query": query, "texts": texts, "return_text": False},
+            )
+            resp.raise_for_status()
 
         scored = resp.json()
         for item in scored:
