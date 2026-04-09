@@ -291,7 +291,7 @@ airag/
 - Dependencies to add: `tqdm`, `httpx`
 **Estimated effort:** M
 **Status:** DONE
-**Completion notes:** Full CLI pipeline with incremental re-ingestion via .airag_state.json. Security: symlink guard, 50MB file size cap. Paths stored relative to corpus_dir. Gap: no stale chunk deletion on re-ingestion. 2026-04-08.
+**Completion notes:** Full CLI pipeline with incremental re-ingestion. Security: symlink guard, 50MB file size cap. Paths stored relative to corpus_dir. State tracking upgraded from JSON sidecar to SQLite manifest (2026-04-09). 2026-04-08.
 
 ---
 
@@ -516,12 +516,24 @@ Work completed outside the original 15 tickets:
 - `tests/test_parsing.py` — 22 tests (file type detection, parse routing)
 - `tests/test_chunking.py` — 37 tests (all 4 chunkers, router integration)
 - `tests/test_models.py` — 11 tests (Pydantic model validation)
-- Total: 76 tests, 0.3s runtime
+- Total (initial): 76 tests, 0.3s runtime
 
 ### Minor Fixes (2026-04-08)
 - Added `pyyaml>=6.0` to dependencies (was used but undeclared)
 - Removed dead `parse_json_file()` function from json_chunker.py
 - Added Docker healthchecks to all 3 services
+
+### Streaming Ingestion + Source Manifest (2026-04-09)
+- Replaced 3-phase buffered ingestion (chunk-all → embed-all → upsert-all) with per-file streaming loop
+- Memory bounded to max(chunks_per_file) instead of entire corpus — safe for 1M+ chunks
+- SQLite source manifest (`.airag_manifest.db`) tracks file→chunk mappings, replaces JSON state sidecar
+- `--delete-missing` CLI flag purges orphaned sources from Qdrant and manifest
+- Changed-file re-ingestion: old Qdrant points deleted before new upsert (no stale chunks)
+- TEI embedder `--max-batch-tokens` raised to 65536 for larger batches
+- httpx connection pooling: single TCP connection reused across all embed calls
+- Upsert batch size increased from 100 to 200
+- Tests: `test_manifest.py` (11 tests), `test_ingestion.py` (13 tests) — total suite now 100 tests
+- README.md rewritten with full project documentation
 
 ---
 
@@ -531,22 +543,31 @@ Prioritized list of known gaps, technical debt, and potential improvements.
 
 ### P0 — Must Fix
 
-| Issue | Location | Description | Effort |
-|-------|----------|-------------|--------|
-| No automated collection creation | ingestion.py | Qdrant `corpus` collection must exist before first ingest. Add `ensure_collection()` that creates with correct params (1024-dim, cosine, int8 quantization) if absent. | S |
-| `list_sources()` O(n) at scale | retriever.py:144 | Scrolls entire collection to aggregate sources. At 1M chunks = 10K HTTP calls. Replace with a source manifest sidecar (SQLite or second Qdrant collection). | M |
-| `get_stats()` calls `list_sources()` | retriever.py:184 | Inherits O(n) cost. Decouple: use `info.points_count` directly, derive source count from manifest. | S |
+All P0 items resolved.
+
+| Issue | Resolution | Date |
+|-------|-----------|------|
+| No automated collection creation | `ensure_collection()` added to ingestion.py | 2026-04-08 |
+| `list_sources()` O(n) at scale | Replaced scroll with facet counts in retriever.py | 2026-04-08 |
+| `get_stats()` calls `list_sources()` | Decoupled: uses `info.points_count` directly | 2026-04-08 |
 
 ### P1 — Should Fix
 
+**Resolved:**
+
+| Issue | Resolution | Date |
+|-------|-----------|------|
+| No stale chunk deletion | SQLite manifest tracks file→chunk mappings; old points deleted on re-ingest | 2026-04-09 |
+| No `--delete-missing` flag | `--delete-missing` CLI flag added to ingestion | 2026-04-09 |
+| No Qdrant payload indexes | `ensure_payload_indexes()` creates indexes on collection setup | 2026-04-08 |
+| Streaming ingestion | Per-file streaming loop replaces 3-phase buffer; memory bounded to max(chunks_per_file) | 2026-04-09 |
+| README incomplete | Full README with architecture, quickstart, tool reference, configuration | 2026-04-09 |
+
+**Open:**
+
 | Issue | Location | Description | Effort |
 |-------|----------|-------------|--------|
-| No stale chunk deletion | ingestion.py | Re-ingesting a changed file upserts new chunks but never deletes old ones. Requires tracking chunk_ids per file (source manifest). | M |
-| No `--delete-missing` flag | ingestion.py | Removed files leave orphan chunks in Qdrant indefinitely. Depends on source manifest. | M |
-| No Qdrant payload indexes | ingestion.py | `file_path`, `file_type`, `language` filter fields not indexed — filtered queries scan full collection. Add `create_payload_index()` during collection setup. | S |
-| Streaming ingestion | ingestion.py:146-164 | All chunks loaded into RAM before embedding. At 1M chunks (~2GB text) this exceeds WSL2 memory. Process → embed → upsert in per-file batches. | M |
 | Sub-chunk byte offset approximation | code.py:163 | Split sub-segments use approximate offsets, causing potentially unstable chunk_ids. Use cumulative byte offsets instead. | S |
-| README incomplete | README.md | Only 10 lines. Missing: setup instructions, ingestion usage, MCP connection guide, tool reference. | S |
 | Gold set self-referential | eval/gold_set.json | 30 queries target airag codebase only. Extend with queries against real target corpus after production ingestion. | M |
 
 ### P2 — Nice to Have
@@ -554,9 +575,7 @@ Prioritized list of known gaps, technical debt, and potential improvements.
 | Issue | Location | Description | Effort |
 |-------|----------|-------------|--------|
 | Pydantic models unused at runtime | models.py, retriever.py, ingestion.py | `ChunkMetadata`, `ChunkResult`, `CorpusStats` defined but never used for validation — all data flows as raw dicts. | S |
-| No httpx connection pooling | retriever.py:31,100 | `embed()` and `_rerank()` create/destroy AsyncClient per call. Share a pooled client. | S |
 | python-magic fallback | router.py | Unknown extensions default to text. MIME-type detection would handle extensionless/misnamed files. | S |
-| `SKIP_PATTERNS` glob matching broken | ingestion.py:27 | Patterns like `*.egg-info` use glob syntax but are matched with `==`. Never matches `foo.egg-info`. | S |
 | Float score nondeterminism | retriever.py | Reranker float scores may vary across inference runs — byte-identical responses not guaranteed for identical queries. | S |
 | `section` field redundant | retriever.py:79 | `section` and `heading_path` in search results are always identical. Remove `section` or give it distinct semantics. | S |
 | Tree-sitter nested definitions | code.py | Only root-level AST children walked — methods inside classes not individually extracted. | M |
