@@ -67,7 +67,7 @@ uv run python -m airag.ingestion --corpus-dir /path/to/your/docs
 
 **4. Register the MCP server**
 
-Add to your `~/.claude/claude_desktop_config.json` (Claude Desktop) or `.mcp.json` (project-level):
+Add to your `.mcp.json` (project-level) to register with Claude Code:
 
 ```json
 {
@@ -97,6 +97,7 @@ Once registered, the following tools are available in any MCP-compatible client:
 | `get_chunk`        | `chunk_id`                              | Full chunk text and metadata by ID.              |
 | `list_sources`     | —                                       | All indexed sources with per-source chunk counts. |
 | `get_corpus_stats` | —                                       | Total chunks, source count, embedding model info. |
+| `ping`             | —                                       | Health check — confirms the airag MCP server is running. |
 
 All responses are deterministically ordered for client-side caching compatibility.
 
@@ -109,9 +110,12 @@ The ingestion pipeline walks a directory, parses each file by type, chunks the c
 | Type | Parser | Chunk size |
 |------|--------|------------|
 | Code (Python, JS/TS, Go, Rust, Java, C/C++, Ruby, Bash) | tree-sitter | 1024 tokens / 128 overlap |
-| Markdown | langchain RecursiveCharacterTextSplitter | 512 tokens / 64 overlap |
-| HTML / XML | beautifulsoup4 | 512 tokens / 64 overlap |
-| JSON / YAML | structured path-aware splitting | 512 tokens / 64 overlap |
+| Code (SQL, CSS/SCSS, Makefile, Dockerfile, Jenkinsfile) | text fallback (no tree-sitter) | 1024 tokens / 128 overlap |
+| Markdown (.md, .mdx) | langchain RecursiveCharacterTextSplitter | 512 tokens / 64 overlap |
+| HTML / XML (.html, .htm, .xml, .svg) | beautifulsoup4 | 512 tokens / 64 overlap |
+| JSON / YAML / TOML (.json, .yaml, .yml, .toml) | structured path-aware splitting | 512 tokens / 64 overlap |
+| JSONL (.jsonl) | structured path-aware splitting | 512 tokens / 64 overlap |
+| Plain text (.txt, .rst, .log, .csv, .env, .cfg, .ini, .conf) | text fallback | 512 tokens / 64 overlap |
 
 A SQLite manifest (`.airag_manifest.db` inside the corpus directory) tracks content hashes for each file. Re-running ingestion skips unchanged files automatically.
 
@@ -152,19 +156,16 @@ uv run pytest
 npx @modelcontextprotocol/inspector uv --directory ~/ai-workspace/airag run src/airag/server.py
 ```
 
-**Run the eval harness** (requires `eval/gold_set.json`):
+**Run the eval harness** (requires `eval/gold_set.json` and dev dependencies):
 
 ```bash
-uv run python eval/run_eval.py
+uv sync --all-groups        # install dev deps (ranx, etc.) if not already present
+uv run --group dev python eval/run_eval.py
 ```
 
 Eval metrics: recall@k, MRR, NDCG@k via ranx.
 
-## Hardware
+## Documentation
 
-Developed and tested on:
-
-- GPU: NVIDIA RTX 5070 (Blackwell sm_120, 12 GB GDDR7) via WSL2 CUDA passthrough
-- CPU: Intel i7-12700K
-- RAM: 64 GB (WSL2 capped at 48 GB)
-- OS: WSL2 Ubuntu on Windows 11
+- `docs/grounding/` — original project brief (reference-only)
+- `docs/tickets/` — implementation ticket backlog (see `docs/tickets/INDEX.md`)

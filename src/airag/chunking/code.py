@@ -3,14 +3,30 @@
 import hashlib
 import importlib
 import logging
+from pathlib import Path
 
-import tiktoken
 import tree_sitter
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from tokenizers import Tokenizer
 
 logger = logging.getLogger("airag")
 
-_enc = tiktoken.get_encoding("cl100k_base")
+# Resolve the Qwen3 tokenizer from the local HuggingFace model cache.
+# Layout: .volumes/models/models--Qwen--Qwen3-Embedding-0.6B/snapshots/<hash>/tokenizer.json
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_MODEL_CACHE = _PROJECT_ROOT / ".volumes" / "models"
+_QWEN3_REPO = _MODEL_CACHE / "models--Qwen--Qwen3-Embedding-0.6B"
+
+
+def _resolve_tokenizer() -> Tokenizer:
+    """Load Qwen3-Embedding-0.6B tokenizer from local HuggingFace cache."""
+    refs_file = _QWEN3_REPO / "refs" / "main"
+    snapshot_hash = refs_file.read_text().strip()
+    tokenizer_path = _QWEN3_REPO / "snapshots" / snapshot_hash / "tokenizer.json"
+    return Tokenizer.from_file(str(tokenizer_path))
+
+
+_enc = _resolve_tokenizer()
 
 CODE_MAX_TOKENS = 1024
 CODE_OVERLAP = 128
@@ -57,8 +73,8 @@ def has_tree_sitter_support(language: str | None) -> bool:
 
 
 def count_tokens(text: str) -> int:
-    """Count tokens using cl100k_base encoding."""
-    return len(_enc.encode(text))
+    """Count tokens using the Qwen3-Embedding-0.6B tokenizer."""
+    return len(_enc.encode(text).ids)
 
 
 def make_chunk_id(file_path: str, byte_offset: int) -> str:

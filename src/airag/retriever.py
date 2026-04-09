@@ -31,7 +31,7 @@ class Retriever:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
                 f"{self._embed_url}/embed",
-                json={"inputs": text},
+                json={"inputs": text, "prompt_name": "query"},
             )
             resp.raise_for_status()
             return resp.json()[0]

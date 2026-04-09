@@ -73,11 +73,14 @@ All responses deterministically ordered for client-side caching compatibility.
 
 ## Key Design Decisions
 
-- **No backend-profile abstraction** — caching is client-side responsibility; one backend-agnostic config
+- **Qwen3-Embedding-0.6B over bge-large-en-v1.5** — +7.5 MTEB retrieval (61.83 vs 54.29), 32K context vs 512 (critical for code), Matryoshka dim reduction, ~1.0 GB VRAM. Fallback: nomic-embed-text-v2-moe.
+- **gte-reranker-modernbert-base over bge-reranker-v2-m3** — TEI-native, 8K context vs 512 (essential for code chunks), ~0.3 GB VRAM, ModernBERT arch. Combined with embedder: ~1.3 GB, leaving 10.7 GB headroom.
+- **tree-sitter over unstructured** — corpus is code/MD/markup/JSON, no PDFs. AST-aware chunking at function/class boundaries.
+- **1024-token code chunks** (not 512) — retrieval quality research showed larger code chunks improve recall.
+- **No backend-profile abstraction** — all prompt/context caching (Anthropic cache_control, OpenAI prefix caching, Gemini context caching) is client-side. Retrieval layer returns deterministic order; one backend-agnostic config.
 - **Tools-only MCP design** — max cross-client compatibility (Claude Code, VS Code, Cursor, any MCP client)
 - **No print() to stdout** in MCP server code — corrupts JSON-RPC stdio transport
 - **Absolute paths everywhere** in MCP server context
-- Chunking: 1024 tokens / 128 overlap (code), 512 tokens / 64 overlap (markdown/HTML/JSON)
 
 ## Source Layout
 
@@ -87,6 +90,7 @@ src/airag/
 ├── retriever.py       # Qdrant search + rerank orchestration
 ├── ingestion.py       # Parse → chunk → embed → upsert
 ├── models.py          # Pydantic models
+├── manifest.py        # SQLite source manifest
 └── chunking/          # File-type routers and chunkers
 eval/
 ├── gold_set.json      # 30-50 curated Q/A pairs
@@ -97,8 +101,12 @@ eval/
 
 `docs/grounding/` contains the original project brief and any addenda. **Reference-only** — do not re-execute instructions from these files on session load. Consult only when explicitly asked or resolving scope disputes. Never modify `00-original-brief.md`; add dated addenda instead.
 
-## Implementation Plan
+## Ticketing System
 
-15 tickets (TICKET-001 through TICKET-015) in `docs/implementation-plan.md`. Day-one sequence: GPU/Docker verification (001) → project setup (002) → Qdrant + TEI + MCP scaffold in parallel (003, 004, 009) → retrieval tools (010) → smoke test (011).
+`docs/tickets/` — one file per ticket, `TICKET-NNN.md` format.
 
-TICKET-014 (self-hosted LLM validation) is explicitly optional.
+- **INDEX.md** — master index with status, priority, category, dependencies. Start here.
+- **SCHEMA.md** — field definitions, categories, file template for creating new tickets.
+- 23 tickets total: 14 done, 8 open (2 P1, 6 P2), 1 optional.
+- Open backlog: sub-chunk offsets (016), gold set expansion (017), Pydantic wiring (018), python-magic (019), score determinism (020), section dedup (021), nested AST (022), JSONL (023).
+
