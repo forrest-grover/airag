@@ -1,0 +1,152 @@
+[
+  {
+    "query_id": "q001",
+    "query": "How does the retriever embed a query and search Qdrant?",
+    "relevant_chunk_ids": ["79edc7eebc0e32d6"]
+  },
+  {
+    "query_id": "q002",
+    "query": "What methods does the Retriever class expose for fetching chunks and listing sources?",
+    "relevant_chunk_ids": ["7485079c3a712bef"]
+  },
+  {
+    "query_id": "q003",
+    "query": "How does the search_corpus MCP tool work?",
+    "relevant_chunk_ids": ["d453c01ce42dfda0", "79edc7eebc0e32d6"]
+  },
+  {
+    "query_id": "q004",
+    "query": "What is the get_chunk MCP tool and how does it retrieve a chunk by ID?",
+    "relevant_chunk_ids": ["f59d7414cfb59777", "7485079c3a712bef"]
+  },
+  {
+    "query_id": "q005",
+    "query": "How does the MCP server start and what transport does it use?",
+    "relevant_chunk_ids": ["d358ea1c6ffdac72", "dcc1638b7983f711", "4d91149726690d69"]
+  },
+  {
+    "query_id": "q006",
+    "query": "Where is the ping health check tool defined?",
+    "relevant_chunk_ids": ["45b63513d2bca80a"]
+  },
+  {
+    "query_id": "q007",
+    "query": "What does the list_sources MCP tool return?",
+    "relevant_chunk_ids": ["16cfeb8913002340", "7485079c3a712bef"]
+  },
+  {
+    "query_id": "q008",
+    "query": "How does the ingestion pipeline parse, chunk, embed and upsert documents?",
+    "relevant_chunk_ids": ["b78b0b5b864f820c", "81ac5434f98bdb31"]
+  },
+  {
+    "query_id": "q009",
+    "query": "How are files scanned for ingestion and which ones are skipped?",
+    "relevant_chunk_ids": ["4f0415d736ba9e98", "95d409bf8735c1b8"]
+  },
+  {
+    "query_id": "q010",
+    "query": "How does the ingestion module persist and reload state between runs?",
+    "relevant_chunk_ids": ["e6a4ed1ac5973977", "4c4f302486bf8c5d"]
+  },
+  {
+    "query_id": "q011",
+    "query": "How does the file_hash function detect changes for incremental ingestion?",
+    "relevant_chunk_ids": ["eac5b0a1b9fbe18e"]
+  },
+  {
+    "query_id": "q012",
+    "query": "How does batch embedding work during ingestion?",
+    "relevant_chunk_ids": ["81ac5434f98bdb31"]
+  },
+  {
+    "query_id": "q013",
+    "query": "What is the CLI entry point for running ingestion?",
+    "relevant_chunk_ids": ["44e7776f8b2f4492", "e53724bad7b15678"]
+  },
+  {
+    "query_id": "q014",
+    "query": "How does the router detect whether a file is code, markdown, markup, or JSON?",
+    "relevant_chunk_ids": ["e95425de01873a5a", "fc7b93a0ae3a5e60"]
+  },
+  {
+    "query_id": "q015",
+    "query": "What function routes a file to the correct chunker and how is the chunking package initialized?",
+    "relevant_chunk_ids": ["75c85ff06966d4ec", "8bbe719b823d64e5"]
+  },
+  {
+    "query_id": "q016",
+    "query": "How does tree-sitter based code chunking split source files into segments?",
+    "relevant_chunk_ids": ["7bb954c7c6901fae", "e7ffa1c71bde5fd7"]
+  },
+  {
+    "query_id": "q017",
+    "query": "What happens when tree-sitter does not support a language? How is code chunked as a fallback?",
+    "relevant_chunk_ids": ["d557923e9b2d5ed0", "b2e9e0049af06f2e"]
+  },
+  {
+    "query_id": "q018",
+    "query": "How are chunk IDs generated from file path and offset?",
+    "relevant_chunk_ids": ["48f2200435abc477"]
+  },
+  {
+    "query_id": "q019",
+    "query": "How does the code chunker count tokens in a text segment?",
+    "relevant_chunk_ids": ["8f7ff38985028c14"]
+  },
+  {
+    "query_id": "q020",
+    "query": "How does _get_symbol_name extract function or class names from AST nodes?",
+    "relevant_chunk_ids": ["f44b2d03c81bf51b"]
+  },
+  {
+    "query_id": "q021",
+    "query": "What context header is prepended to code chunks and how is it built?",
+    "relevant_chunk_ids": ["bcb70e789a8f0a0a"]
+  },
+  {
+    "query_id": "q022",
+    "query": "How does the markdown chunker extract and use heading structure?",
+    "relevant_chunk_ids": ["82f0e95925101747", "787e7f4a4cc2a40a"]
+  },
+  {
+    "query_id": "q023",
+    "query": "Where is the main markdown chunking function and how does it split text?",
+    "relevant_chunk_ids": ["9329f013c44a00af"]
+  },
+  {
+    "query_id": "q024",
+    "query": "How does the HTML/XML markup chunker parse and split documents?",
+    "relevant_chunk_ids": ["bcfa7d0507b73ef5", "0e0e7e3a2d1ff0c1"]
+  },
+  {
+    "query_id": "q025",
+    "query": "How does the JSON chunker handle structured splitting of nested data?",
+    "relevant_chunk_ids": ["60580929379c22ee", "159af9cba3515321"]
+  },
+  {
+    "query_id": "q026",
+    "query": "What is the fallback strategy when JSON is too large for structured splitting?",
+    "relevant_chunk_ids": ["eeb35de508a96ba6"]
+  },
+  {
+    "query_id": "q027",
+    "query": "How does _flatten_dict convert nested dictionaries to dot-notation keys?",
+    "relevant_chunk_ids": ["ec916fdee6bb63d6"]
+  },
+  {
+    "query_id": "q028",
+    "query": "What Pydantic models are used for chunk metadata and search results?",
+    "relevant_chunk_ids": ["321261dcd1db6c25", "4becec24a4a6fc88"]
+  },
+  {
+    "query_id": "q029",
+    "query": "Where is the CorpusStats model defined and what does get_corpus_stats return?",
+    "relevant_chunk_ids": ["1a7193b2a0f51dfb", "0869efac93a3ae74"]
+  },
+  {
+    "query_id": "q030",
+    "query": "How does the code chunker handle oversized text that exceeds the max token limit?",
+    "relevant_chunk_ids": ["d745cb98f48ad615", "687abd85d4f7590e"]
+  }
+]

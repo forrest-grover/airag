@@ -17,6 +17,9 @@ dist/
 .vscode/
 .idea/
 
+# State files
+.airag_state.json
+
 # OS
 .DS_Store
 Thumbs.db

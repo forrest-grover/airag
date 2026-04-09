@@ -33,6 +33,7 @@ airag = "airag.server:main"
 dev = [
     "pytest",
     "pytest-asyncio",
+    "ranx",
 ]
 
 [build-system]

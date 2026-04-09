@@ -23,19 +23,27 @@ async def ping() -> str:
 
 
 @mcp.tool()
-async def search_corpus(query: str, k: int = 5, filters: str | None = None) -> str:
+async def search_corpus(
+    query: str, k: int = 5, filters: str | dict | None = None
+) -> str:
     """Search the corpus for chunks relevant to a query.
 
     Args:
         query: The search query text.
         k: Number of top results to return (default 5).
-        filters: Optional JSON string of metadata filters, e.g. '{"file_type": "python"}'.
+        filters: Optional metadata filters — accepts a dict or a JSON string,
+                 e.g. {"file_type": "python"} or '{"file_type": "python"}'.
 
     Returns:
         JSON string with ranked chunk results.
     """
     try:
-        filter_dict = json.loads(filters) if filters else None
+        if isinstance(filters, dict):
+            filter_dict = filters
+        elif isinstance(filters, str):
+            filter_dict = json.loads(filters)
+        else:
+            filter_dict = None
         results = await retriever.search(query, k=k, filters=filter_dict)
         return json.dumps(results, sort_keys=True, ensure_ascii=False)
     except Exception as e:
