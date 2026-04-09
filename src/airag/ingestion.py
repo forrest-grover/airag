@@ -1,6 +1,7 @@
 """Parse, chunk, embed, and upsert pipeline."""
 
 import argparse
+import fnmatch
 import hashlib
 import json
 import logging
@@ -11,7 +12,7 @@ from pathlib import Path
 
 import httpx
 from qdrant_client import QdrantClient
-from qdrant_client.models import PointStruct
+from qdrant_client.models import Distance, PayloadSchemaType, PointStruct, VectorParams
 from tqdm import tqdm
 
 from airag.chunking import chunk_file
@@ -22,6 +23,8 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
 )
 logger = logging.getLogger("airag")
+
+VECTOR_DIMENSION = 1024
 
 # Default gitignore-like patterns to skip
 SKIP_PATTERNS = {
@@ -90,7 +93,7 @@ def should_skip(path: Path) -> bool:
     ):
         return True
     # Skip known dirs
-    if path.is_dir() and path.name in SKIP_PATTERNS:
+    if path.is_dir() and any(fnmatch.fnmatch(path.name, p) for p in SKIP_PATTERNS):
         return True
     # Skip binary/non-text extensions
     if path.is_file() and path.suffix.lower() in SKIP_EXTENSIONS:
@@ -155,6 +158,55 @@ def file_hash(path: Path) -> str:
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
+def ensure_collection(client: QdrantClient, collection: str) -> None:
+    """Create the Qdrant collection if it doesn't already exist."""
+    existing = [c.name for c in client.get_collections().collections]
+    if collection in existing:
+        logger.info("Collection '%s' already exists", collection)
+        # Ensure indexes exist even on pre-existing collections
+        ensure_payload_indexes(client, collection)
+        return
+
+    logger.info(
+        "Creating collection '%s' (dim=%d, cosine)", collection, VECTOR_DIMENSION
+    )
+    client.create_collection(
+        collection_name=collection,
+        vectors_config=VectorParams(
+            size=VECTOR_DIMENSION,
+            distance=Distance.COSINE,
+        ),
+    )
+
+    # Create payload indexes for efficient facet queries and filtering
+    ensure_payload_indexes(client, collection)
+
+
+def ensure_payload_indexes(client: QdrantClient, collection: str) -> None:
+    """Create payload indexes required for facet queries and filtering.
+
+    Idempotent — Qdrant silently ignores index creation if the index already
+    exists with the same type.
+    """
+    index_fields = {
+        "file_path": PayloadSchemaType.KEYWORD,
+        "file_type": PayloadSchemaType.KEYWORD,
+        "chunk_id": PayloadSchemaType.KEYWORD,
+        "language": PayloadSchemaType.KEYWORD,
+    }
+    for field, schema_type in index_fields.items():
+        try:
+            client.create_payload_index(
+                collection_name=collection,
+                field_name=field,
+                field_schema=schema_type,
+            )
+            logger.info("Created payload index: %s (%s)", field, schema_type)
+        except Exception as e:
+            # Index may already exist; log and continue
+            logger.debug("Payload index %s skipped: %s", field, e)
+
+
 def ingest(
     corpus_dir: Path,
     qdrant_url: str = "http://localhost:6333",
@@ -166,6 +218,10 @@ def ingest(
     start = time.time()
 
     client = QdrantClient(url=qdrant_url)
+
+    # Ensure the collection exists before any upserts
+    ensure_collection(client, collection)
+
     state_path = corpus_dir / ".airag_state.json"
     state = load_state(state_path)
 

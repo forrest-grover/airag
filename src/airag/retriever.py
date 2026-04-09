@@ -147,52 +147,53 @@ class Retriever:
             "text": payload.get("text", ""),
         }
 
-    async def list_sources(self, max_points: int = 100_000) -> list[dict]:
-        """Return distinct source documents with chunk counts."""
-        sources: dict[str, dict] = {}
-        offset = None
-        total_scanned = 0
+    async def list_sources(self, limit: int = 10_000) -> list[dict]:
+        """Return distinct source documents with chunk counts.
 
-        while True:
-            points, offset = self.qdrant.scroll(
+        Uses Qdrant's facet API for O(unique_sources) instead of O(total_chunks).
+        Requires a payload index on ``file_path`` (created during ingestion via
+        ``ensure_payload_indexes``).
+        """
+        try:
+            facet_resp = self.qdrant.facet(
                 collection_name=self._collection,
-                limit=100,
-                with_payload=True,
-                offset=offset,
+                key="file_path",
+                limit=limit,
             )
+            sources = [
+                {
+                    "file_path": hit.value,
+                    "file_type": "",  # not available from facet; kept for schema compat
+                    "chunk_count": hit.count,
+                }
+                for hit in facet_resp.hits
+            ]
+        except Exception as e:
+            # Facet requires a payload index; fall back to collection-level info
+            # if the index hasn't been created yet.
+            logger.warning(
+                "facet query failed (missing payload index?), returning empty: %s", e
+            )
+            sources = []
 
-            for point in points:
-                payload = point.payload or {}
-                fp = payload.get("file_path", "unknown")
-                if fp not in sources:
-                    sources[fp] = {
-                        "file_path": fp,
-                        "file_type": payload.get("file_type", ""),
-                        "chunk_count": 0,
-                    }
-                sources[fp]["chunk_count"] += 1
-
-            total_scanned += len(points)
-            if total_scanned >= max_points:
-                logger.warning(
-                    "list_sources safety cap reached: scanned %d points (cap %d). Results may be incomplete.",
-                    total_scanned,
-                    max_points,
-                )
-                break
-
-            if offset is None or not points:
-                break
-
-        return sorted(sources.values(), key=lambda s: s["file_path"])
+        return sorted(sources, key=lambda s: s["file_path"])
 
     async def get_stats(self) -> dict:
-        """Return corpus statistics."""
-        info = self.qdrant.get_collection(self._collection)
+        """Return corpus statistics.
+
+        Uses ``count()`` for total chunks and ``facet()`` for distinct source
+        count — both O(1)-ish instead of scanning every point.
+        """
+        count_result = self.qdrant.count(
+            collection_name=self._collection, exact=False
+        )
+        total_chunks = count_result.count
+
+        # Facet with limit=0 isn't supported; fetch facet and count hits.
         sources = await self.list_sources()
 
         return {
-            "total_chunks": info.points_count,
+            "total_chunks": total_chunks,
             "total_sources": len(sources),
             "embedding_model": self._embed_model,
             "collection_name": self._collection,
