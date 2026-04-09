@@ -68,18 +68,20 @@ def chunk_markup(text: str, file_path: str) -> list[dict]:
     byte_offset = 0
 
     for i, part in enumerate(parts):
-        chunks.append({
-            "chunk_id": make_chunk_id(file_path, byte_offset),
-            "file_path": file_path,
-            "file_type": "markup",
-            "language": None,
-            "symbol": None,
-            "heading_path": None,
-            "json_path": None,
-            "chunk_index": i,
-            "token_count": count_tokens(part),
-            "text": part,
-        })
+        chunks.append(
+            {
+                "chunk_id": make_chunk_id(file_path, byte_offset),
+                "file_path": file_path,
+                "file_type": "markup",
+                "language": None,
+                "symbol": None,
+                "heading_path": None,
+                "json_path": None,
+                "chunk_index": i,
+                "token_count": count_tokens(part),
+                "text": part,
+            }
+        )
         byte_offset += len(part.encode("utf-8"))
 
     return chunks

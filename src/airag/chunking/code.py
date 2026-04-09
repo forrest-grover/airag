@@ -30,12 +30,22 @@ TREE_SITTER_LANGUAGES: dict[str, str] = {
 }
 
 DEFINITION_NODE_TYPES = {
-    "function_definition", "function_declaration", "function_item",
-    "class_definition", "class_declaration", "class_specifier",
-    "method_definition", "method_declaration", "method",
-    "impl_item", "struct_item", "struct_specifier",
-    "interface_declaration", "type_declaration",
-    "module", "enum_item",
+    "function_definition",
+    "function_declaration",
+    "function_item",
+    "class_definition",
+    "class_declaration",
+    "class_specifier",
+    "method_definition",
+    "method_declaration",
+    "method",
+    "impl_item",
+    "struct_item",
+    "struct_specifier",
+    "interface_declaration",
+    "type_declaration",
+    "module",
+    "enum_item",
     "export_statement",
     "decorated_definition",
 }
@@ -86,7 +96,12 @@ def _get_parser(language: str):
 def _get_symbol_name(node) -> str | None:
     """Extract the name/identifier from a definition node."""
     for child in node.children:
-        if child.type in ("identifier", "name", "type_identifier", "property_identifier"):
+        if child.type in (
+            "identifier",
+            "name",
+            "type_identifier",
+            "property_identifier",
+        ):
             return child.text.decode("utf-8")
         # For decorated_definition or export_statement, look deeper
         if child.type in DEFINITION_NODE_TYPES:
@@ -142,28 +157,9 @@ def _chunks_from_segments(
 
         if seg_tokens <= effective_max:
             full_text = header + seg_text
-            chunks.append({
-                "chunk_id": make_chunk_id(file_path, seg["byte_offset"]),
-                "file_path": file_path,
-                "file_type": "code",
-                "language": language,
-                "symbol": symbol,
-                "heading_path": None,
-                "json_path": None,
-                "chunk_index": chunk_index,
-                "token_count": count_tokens(full_text),
-                "text": full_text,
-            })
-            chunk_index += 1
-        else:
-            # Split large segment
-            sub_parts = _split_large_text(seg_text, effective_max, CODE_OVERLAP)
-            for i, part in enumerate(sub_parts):
-                # Approximate byte offset for sub-parts
-                part_byte_offset = seg["byte_offset"] + (i * len(part.encode("utf-8")) // 2)
-                full_text = header + part
-                chunks.append({
-                    "chunk_id": make_chunk_id(file_path, part_byte_offset),
+            chunks.append(
+                {
+                    "chunk_id": make_chunk_id(file_path, seg["byte_offset"]),
                     "file_path": file_path,
                     "file_type": "code",
                     "language": language,
@@ -173,7 +169,32 @@ def _chunks_from_segments(
                     "chunk_index": chunk_index,
                     "token_count": count_tokens(full_text),
                     "text": full_text,
-                })
+                }
+            )
+            chunk_index += 1
+        else:
+            # Split large segment
+            sub_parts = _split_large_text(seg_text, effective_max, CODE_OVERLAP)
+            for i, part in enumerate(sub_parts):
+                # Approximate byte offset for sub-parts
+                part_byte_offset = seg["byte_offset"] + (
+                    i * len(part.encode("utf-8")) // 2
+                )
+                full_text = header + part
+                chunks.append(
+                    {
+                        "chunk_id": make_chunk_id(file_path, part_byte_offset),
+                        "file_path": file_path,
+                        "file_type": "code",
+                        "language": language,
+                        "symbol": symbol,
+                        "heading_path": None,
+                        "json_path": None,
+                        "chunk_index": chunk_index,
+                        "token_count": count_tokens(full_text),
+                        "text": full_text,
+                    }
+                )
                 chunk_index += 1
 
     return chunks
@@ -217,22 +238,32 @@ def _chunk_with_tree_sitter(
         if child.type in DEFINITION_NODE_TYPES:
             # Collect inter-definition code before this node
             if child_start > inter_def_start:
-                inter_text = source_bytes[inter_def_start:child_start].decode("utf-8", errors="replace").strip()
+                inter_text = (
+                    source_bytes[inter_def_start:child_start]
+                    .decode("utf-8", errors="replace")
+                    .strip()
+                )
                 if inter_text:
-                    segments.append({
-                        "text": inter_text,
-                        "byte_offset": inter_def_start,
-                        "symbol": None,
-                    })
+                    segments.append(
+                        {
+                            "text": inter_text,
+                            "byte_offset": inter_def_start,
+                            "symbol": None,
+                        }
+                    )
 
             # Collect the definition itself
-            def_text = source_bytes[child_start:child_end].decode("utf-8", errors="replace")
+            def_text = source_bytes[child_start:child_end].decode(
+                "utf-8", errors="replace"
+            )
             symbol = _get_symbol_name(child)
-            segments.append({
-                "text": def_text,
-                "byte_offset": child_start,
-                "symbol": symbol,
-            })
+            segments.append(
+                {
+                    "text": def_text,
+                    "byte_offset": child_start,
+                    "symbol": symbol,
+                }
+            )
             inter_def_start = child_end
         else:
             # Not a definition — will be collected as inter-definition code
@@ -240,13 +271,17 @@ def _chunk_with_tree_sitter(
 
     # Trailing inter-definition code
     if inter_def_start < len(source_bytes):
-        trailing = source_bytes[inter_def_start:].decode("utf-8", errors="replace").strip()
+        trailing = (
+            source_bytes[inter_def_start:].decode("utf-8", errors="replace").strip()
+        )
         if trailing:
-            segments.append({
-                "text": trailing,
-                "byte_offset": inter_def_start,
-                "symbol": None,
-            })
+            segments.append(
+                {
+                    "text": trailing,
+                    "byte_offset": inter_def_start,
+                    "symbol": None,
+                }
+            )
 
     if not segments:
         # No definitions found — treat entire file as one segment
@@ -267,18 +302,20 @@ def _chunk_code_fallback(text: str, file_path: str, language: str | None) -> lis
     byte_offset = 0
     for i, part in enumerate(parts):
         full_text = header + part
-        chunks.append({
-            "chunk_id": make_chunk_id(file_path, byte_offset),
-            "file_path": file_path,
-            "file_type": "code",
-            "language": language,
-            "symbol": None,
-            "heading_path": None,
-            "json_path": None,
-            "chunk_index": i,
-            "token_count": count_tokens(full_text),
-            "text": full_text,
-        })
+        chunks.append(
+            {
+                "chunk_id": make_chunk_id(file_path, byte_offset),
+                "file_path": file_path,
+                "file_type": "code",
+                "language": language,
+                "symbol": None,
+                "heading_path": None,
+                "json_path": None,
+                "chunk_index": i,
+                "token_count": count_tokens(full_text),
+                "text": full_text,
+            }
+        )
         byte_offset += len(part.encode("utf-8"))
 
     return chunks
@@ -297,18 +334,20 @@ def chunk_text_fallback(text: str, file_path: str, file_type: str) -> list[dict]
 
     byte_offset = 0
     for i, part in enumerate(parts):
-        chunks.append({
-            "chunk_id": make_chunk_id(file_path, byte_offset),
-            "file_path": file_path,
-            "file_type": file_type,
-            "language": None,
-            "symbol": None,
-            "heading_path": None,
-            "json_path": None,
-            "chunk_index": i,
-            "token_count": count_tokens(part),
-            "text": part,
-        })
+        chunks.append(
+            {
+                "chunk_id": make_chunk_id(file_path, byte_offset),
+                "file_path": file_path,
+                "file_type": file_type,
+                "language": None,
+                "symbol": None,
+                "heading_path": None,
+                "json_path": None,
+                "chunk_index": i,
+                "token_count": count_tokens(part),
+                "text": part,
+            }
+        )
         byte_offset += len(part.encode("utf-8"))
 
     return chunks

@@ -58,6 +58,8 @@ All components run in Docker on WSL2 Ubuntu with GPU access via the NVIDIA host 
 - `.wslconfig` location: `C:\Users\<username>\.wslconfig`
 - After .wslconfig changes: `wsl --shutdown` then restart
 **Estimated effort:** S
+**Status:** DONE (runtime-verified)
+**Completion notes:** GPU, Docker, CUDA passthrough verified. Services running on RTX 5070 via WSL2 CUDA. 2026-04-08.
 
 ---
 
@@ -103,6 +105,8 @@ airag/
 ```
 - `uv init` then `uv add mcp[cli] qdrant-client httpx`
 **Estimated effort:** S
+**Status:** DONE
+**Completion notes:** Full project structure, pyproject.toml, .gitignore, docker-compose.yml, .mcp.json all in place. 2026-04-08.
 
 ---
 
@@ -139,6 +143,8 @@ airag/
   ```
 - Qdrant is CPU-only, confirmed no GPU dependency
 **Estimated effort:** S
+**Status:** DONE
+**Completion notes:** Qdrant container running with healthcheck, localhost-only binding. Gap: no automated collection creation (collection created manually or on first upsert). 2026-04-08.
 
 ---
 
@@ -174,6 +180,8 @@ airag/
 - If Qwen3 fails to load (transformers version issue), fall back to nomic-embed-text-v2-moe
 - Test: `curl -s http://localhost:8081/embed -X POST -H 'Content-Type: application/json' -d '{"inputs":"hello world"}'`
 **Estimated effort:** S
+**Status:** DONE
+**Completion notes:** TEI embedder running Qwen3-Embedding-0.6B on sm_120 image. Healthcheck configured. 2026-04-08.
 
 ---
 
@@ -208,6 +216,8 @@ airag/
 - Verify both TEI instances share the GPU without conflict
 - Test: `curl -s http://localhost:8082/rerank -X POST -H 'Content-Type: application/json' -d '{"query":"test","texts":["doc1","doc2"]}'`
 **Estimated effort:** S
+**Status:** DONE
+**Completion notes:** TEI reranker running gte-reranker-modernbert-base. Graceful fallback in retriever if reranker unavailable. 2026-04-08.
 
 ---
 
@@ -229,6 +239,8 @@ airag/
 - Supported code extensions: .py, .js, .ts, .go, .rs, .java, .cpp, .c, .rb, .sh, .sql, etc.
 - For code files: just read the text — tree-sitter parsing happens in the chunking step
 **Estimated effort:** M
+**Status:** DONE
+**Completion notes:** File type router with extension/filename maps, all parsers implemented. python-magic fallback NOT implemented (deferred — low priority for code/MD corpus). Unit tests: 22 tests in test_parsing.py. 2026-04-08.
 
 ---
 
@@ -252,6 +264,8 @@ airag/
 - `langchain-text-splitters` for MD: `MarkdownHeaderTextSplitter` → `RecursiveCharacterTextSplitter`
 - `tiktoken` for token counting
 **Estimated effort:** L
+**Status:** DONE
+**Completion notes:** All 4 chunkers (code, markdown, markup, JSON) implemented with correct token sizes. 10 tree-sitter grammars. Unit tests: 37 tests in test_chunking.py. Known limitation: tree-sitter only walks root-level AST nodes (class methods not individually extracted). 2026-04-08.
 
 ---
 
@@ -276,6 +290,8 @@ airag/
 - File change detection: store file_path + mtime + size in a local SQLite or JSON sidecar
 - Dependencies to add: `tqdm`, `httpx`
 **Estimated effort:** M
+**Status:** DONE
+**Completion notes:** Full CLI pipeline with incremental re-ingestion via .airag_state.json. Security: symlink guard, 50MB file size cap. Paths stored relative to corpus_dir. Gap: no stale chunk deletion on re-ingestion. 2026-04-08.
 
 ---
 
@@ -322,6 +338,8 @@ airag/
 - Critical: defer all heavy initialization (Qdrant/TEI clients) to first tool call to avoid startup timeout
 - All logging to stderr via stdlib `logging`
 **Estimated effort:** S
+**Status:** DONE
+**Completion notes:** FastMCP stdio server with ping tool, stderr-only logging, lazy Qdrant init. .mcp.json registered. 2026-04-08.
 
 ---
 
@@ -348,6 +366,8 @@ airag/
 - Use `httpx.AsyncClient` for non-blocking TEI calls
 - Lazy-init clients on first tool call (not at import time)
 **Estimated effort:** M
+**Status:** DONE
+**Completion notes:** All 4 retrieval tools implemented with rerank fallback, deterministic ordering, JSON error handling. Security: k clamped [1,50], filter key allowlist, list_sources scroll cap (100K points). 2026-04-08.
 
 ---
 
@@ -369,6 +389,8 @@ airag/
 - Test: ask Claude Code a question about the test corpus content
 - If tools don't appear: check `~/.claude/config.json` for `disabledMcpjsonServers`
 **Estimated effort:** S
+**Status:** DONE
+**Completion notes:** Smoke test script (tests/smoke_test.py) validates all 4 tools against live services. Fixture corpus (5 files) ingested and verified. MCP server responds to JSON-RPC init handshake. 2026-04-08.
 
 ---
 
@@ -386,6 +408,8 @@ airag/
 - `json.dumps(result, sort_keys=True, ensure_ascii=False)` for deterministic serialization
 - This is the RAG server's only caching responsibility — all cache_control / prefix caching is client-side
 **Estimated effort:** S
+**Status:** DONE
+**Completion notes:** sort_keys=True + deterministic sort(-score, chunk_id) on all responses. Gap: client caching guidance not documented. 2026-04-08.
 
 ---
 
@@ -409,6 +433,8 @@ airag/
 - Two runs: baseline (dense retrieval only) and reranked
 - Gold set must be manually curated after initial ingestion — create a template with 5 seed questions initially, expand to 30-50 over time
 **Estimated effort:** M
+**Status:** DONE
+**Completion notes:** ranx eval harness with 30 Q/A pairs, recall@5 threshold gate, dense vs reranked comparison. Gold set is self-referential (tests airag codebase). 2026-04-08.
 
 ---
 
@@ -427,6 +453,8 @@ airag/
 - This is a validation ticket, not an implementation ticket — zero server changes expected
 - VRAM note: a local LLM competes for the same 12 GB GPU. May need to stop TEI services or use CPU inference for the LLM.
 **Estimated effort:** S
+**Status:** OPTIONAL — NOT ATTEMPTED
+**Completion notes:** Not attempted per plan. MCP server is backend-agnostic by design.
 
 ---
 
@@ -446,6 +474,8 @@ airag/
 - Test queries should span: code logic questions, config lookup, markdown documentation, cross-file relationships
 - Check Claude Code's tool call display to confirm chunks were retrieved
 **Estimated effort:** M
+**Status:** DONE
+**Completion notes:** Project source (31 files, 196 chunks) ingested as corpus. 5 diverse queries tested via MCP tools with accurate, cited results. Reranker scores 0.93-0.97. 2026-04-08.
 
 ---
 
@@ -464,3 +494,70 @@ Get a minimum working pipeline with a tiny corpus before optimizing:
 After Day One you have a working loop: ask a question in Claude Code → MCP server retrieves chunks → model answers with context. Everything after this (reranker, real chunking pipeline, eval harness) is optimization on a known-working base.
 
 **Recommended Day One shortcut:** For TICKET-010, start with a simplified retriever that does dense search only (no reranker) against a handful of manually-inserted test vectors. Wire up the reranker (TICKET-005) in a follow-up pass once the basic loop works. This reduces Day One's critical path to: GPU verify → project setup → Qdrant + embedder + MCP scaffold (parallel) → tools → smoke test.
+
+---
+
+## E. Post-Implementation Work
+
+Work completed outside the original 15 tickets:
+
+### Security Hardening (2026-04-08)
+- Docker ports bound to `127.0.0.1` only (prevents LAN access to unauthenticated services)
+- Symlink guard in ingestion scanner (prevents corpus directory escape)
+- 50 MB file size cap in scanner (prevents OOM on oversized files)
+- JSON flattener recursion depth limit of 20 (prevents stack overflow on adversarial input)
+- `k` parameter clamped to [1, 50] in search_corpus
+- Filter key allowlist validation (file_type, language, file_path)
+- `list_sources` scroll capped at 100,000 points
+- File paths stored relative to corpus_dir (prevents filesystem layout leakage)
+
+### Unit Test Suite (2026-04-08)
+- `tests/conftest.py` — shared fixtures
+- `tests/test_parsing.py` — 22 tests (file type detection, parse routing)
+- `tests/test_chunking.py` — 37 tests (all 4 chunkers, router integration)
+- `tests/test_models.py` — 11 tests (Pydantic model validation)
+- Total: 76 tests, 0.3s runtime
+
+### Minor Fixes (2026-04-08)
+- Added `pyyaml>=6.0` to dependencies (was used but undeclared)
+- Removed dead `parse_json_file()` function from json_chunker.py
+- Added Docker healthchecks to all 3 services
+
+---
+
+## F. Known Gaps and Future Work
+
+Prioritized list of known gaps, technical debt, and potential improvements.
+
+### P0 — Must Fix
+
+| Issue | Location | Description | Effort |
+|-------|----------|-------------|--------|
+| No automated collection creation | ingestion.py | Qdrant `corpus` collection must exist before first ingest. Add `ensure_collection()` that creates with correct params (1024-dim, cosine, int8 quantization) if absent. | S |
+| `list_sources()` O(n) at scale | retriever.py:144 | Scrolls entire collection to aggregate sources. At 1M chunks = 10K HTTP calls. Replace with a source manifest sidecar (SQLite or second Qdrant collection). | M |
+| `get_stats()` calls `list_sources()` | retriever.py:184 | Inherits O(n) cost. Decouple: use `info.points_count` directly, derive source count from manifest. | S |
+
+### P1 — Should Fix
+
+| Issue | Location | Description | Effort |
+|-------|----------|-------------|--------|
+| No stale chunk deletion | ingestion.py | Re-ingesting a changed file upserts new chunks but never deletes old ones. Requires tracking chunk_ids per file (source manifest). | M |
+| No `--delete-missing` flag | ingestion.py | Removed files leave orphan chunks in Qdrant indefinitely. Depends on source manifest. | M |
+| No Qdrant payload indexes | ingestion.py | `file_path`, `file_type`, `language` filter fields not indexed — filtered queries scan full collection. Add `create_payload_index()` during collection setup. | S |
+| Streaming ingestion | ingestion.py:146-164 | All chunks loaded into RAM before embedding. At 1M chunks (~2GB text) this exceeds WSL2 memory. Process → embed → upsert in per-file batches. | M |
+| Sub-chunk byte offset approximation | code.py:163 | Split sub-segments use approximate offsets, causing potentially unstable chunk_ids. Use cumulative byte offsets instead. | S |
+| README incomplete | README.md | Only 10 lines. Missing: setup instructions, ingestion usage, MCP connection guide, tool reference. | S |
+| Gold set self-referential | eval/gold_set.json | 30 queries target airag codebase only. Extend with queries against real target corpus after production ingestion. | M |
+
+### P2 — Nice to Have
+
+| Issue | Location | Description | Effort |
+|-------|----------|-------------|--------|
+| Pydantic models unused at runtime | models.py, retriever.py, ingestion.py | `ChunkMetadata`, `ChunkResult`, `CorpusStats` defined but never used for validation — all data flows as raw dicts. | S |
+| No httpx connection pooling | retriever.py:31,100 | `embed()` and `_rerank()` create/destroy AsyncClient per call. Share a pooled client. | S |
+| python-magic fallback | router.py | Unknown extensions default to text. MIME-type detection would handle extensionless/misnamed files. | S |
+| `SKIP_PATTERNS` glob matching broken | ingestion.py:27 | Patterns like `*.egg-info` use glob syntax but are matched with `==`. Never matches `foo.egg-info`. | S |
+| Float score nondeterminism | retriever.py | Reranker float scores may vary across inference runs — byte-identical responses not guaranteed for identical queries. | S |
+| `section` field redundant | retriever.py:79 | `section` and `heading_path` in search results are always identical. Remove `section` or give it distinct semantics. | S |
+| Tree-sitter nested definitions | code.py | Only root-level AST children walked — methods inside classes not individually extracted. | M |
+| JSONL not supported | json_chunker.py | `.jsonl` files classified as JSON but `json.loads` fails on multi-record JSONL. | S |

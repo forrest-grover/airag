@@ -1,0 +1,53 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Inventory Management API",
+    "version": "2.1.0",
+    "description": "RESTful API for warehouse inventory tracking and order fulfillment"
+  },
+  "paths": {
+    "/items": {
+      "get": {
+        "summary": "List all inventory items",
+        "parameters": [
+          {"name": "category", "in": "query", "schema": {"type": "string"}},
+          {"name": "in_stock", "in": "query", "schema": {"type": "boolean"}}
+        ]
+      },
+      "post": {
+        "summary": "Create a new inventory item",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {"type": "string"},
+                  "sku": {"type": "string", "pattern": "^[A-Z]{3}-[0-9]{6}$"},
+                  "quantity": {"type": "integer", "minimum": 0},
+                  "warehouse_id": {"type": "string"}
+                },
+                "required": ["name", "sku", "quantity"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/items/{itemId}": {
+      "get": {
+        "summary": "Get item details by ID"
+      },
+      "patch": {
+        "summary": "Update item quantity or metadata"
+      }
+    },
+    "/orders": {
+      "post": {
+        "summary": "Create a fulfillment order",
+        "description": "Reserves inventory and creates a picking list for warehouse staff"
+      }
+    }
+  }
+}

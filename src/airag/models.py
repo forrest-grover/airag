@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 class ChunkMetadata(BaseModel):
     """Metadata for a document chunk."""
+
     chunk_id: str
     file_path: str
     file_type: str
@@ -18,6 +19,7 @@ class ChunkMetadata(BaseModel):
 
 class ChunkResult(BaseModel):
     """A chunk returned from search."""
+
     chunk_id: str
     score: float
     file_path: str
@@ -31,6 +33,7 @@ class ChunkResult(BaseModel):
 
 class CorpusStats(BaseModel):
     """Corpus statistics."""
+
     total_chunks: int
     total_sources: int
     embedding_model: str

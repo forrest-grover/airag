@@ -2,7 +2,6 @@
 
 import json
 import logging
-from pathlib import Path
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -14,51 +13,10 @@ JSON_MAX_TOKENS = 1024
 JSON_OVERLAP = 128
 
 
-def parse_json_file(path: Path) -> dict:
-    """Parse a JSON, YAML, or TOML file.
-
-    Returns:
-        Dict with keys: data (parsed object), format (json/yaml/toml), text
-    """
-    suffix = path.suffix.lower()
-    text = path.read_text(encoding="utf-8", errors="replace")
-
-    if suffix in (".yaml", ".yml"):
-        try:
-            import yaml
-
-            data = yaml.safe_load(text)
-            return {"data": data, "format": "yaml", "text": text}
-        except Exception:
-            return {"data": None, "format": "yaml", "text": text}
-
-    if suffix == ".toml":
-        try:
-            import tomllib
-
-            data = tomllib.loads(text)
-            return {"data": data, "format": "toml", "text": text}
-        except Exception:
-            return {"data": None, "format": "toml", "text": text}
-
-    # JSON / JSONL
-    try:
-        data = json.loads(text)
-        return {"data": data, "format": "json", "text": text}
-    except json.JSONDecodeError:
-        # Could be JSONL
-        lines = []
-        for line in text.strip().split("\n"):
-            try:
-                lines.append(json.loads(line))
-            except json.JSONDecodeError:
-                pass
-        if lines:
-            return {"data": lines, "format": "jsonl", "text": text}
-        return {"data": None, "format": "json", "text": text}
+MAX_FLATTEN_DEPTH = 20
 
 
-def _flatten_dict(data: dict, prefix: str = "") -> list[dict]:
+def _flatten_dict(data: dict, prefix: str = "", depth: int = 0) -> list[dict]:
     """Flatten a dict into key-path segments for chunking.
 
     Returns list of dicts with keys: json_path, text.
@@ -72,9 +30,15 @@ def _flatten_dict(data: dict, prefix: str = "") -> list[dict]:
             tokens = count_tokens(text)
             if tokens <= JSON_MAX_TOKENS:
                 segments.append({"json_path": path, "text": text})
+            elif depth >= MAX_FLATTEN_DEPTH:
+                # Depth limit reached — serialize remaining subtree as-is
+                logger.warning(
+                    "Max flatten depth reached at %s, serializing subtree", path
+                )
+                segments.append({"json_path": path, "text": text})
             else:
                 # Recurse into large sub-objects
-                segments.extend(_flatten_dict(value, prefix=path))
+                segments.extend(_flatten_dict(value, prefix=path, depth=depth + 1))
         elif isinstance(value, list):
             text = json.dumps({key: value}, indent=2, ensure_ascii=False)
             tokens = count_tokens(text)
@@ -111,18 +75,20 @@ def chunk_json(text: str, file_path: str) -> list[dict]:
 
     # Small enough for a single chunk
     if total_tokens <= JSON_MAX_TOKENS:
-        return [{
-            "chunk_id": make_chunk_id(file_path, 0),
-            "file_path": file_path,
-            "file_type": "json",
-            "language": None,
-            "symbol": None,
-            "heading_path": None,
-            "json_path": None,
-            "chunk_index": 0,
-            "token_count": total_tokens,
-            "text": text,
-        }]
+        return [
+            {
+                "chunk_id": make_chunk_id(file_path, 0),
+                "file_path": file_path,
+                "file_type": "json",
+                "language": None,
+                "symbol": None,
+                "heading_path": None,
+                "json_path": None,
+                "chunk_index": 0,
+                "token_count": total_tokens,
+                "text": text,
+            }
+        ]
 
     # Try structured splitting
     try:
@@ -131,11 +97,13 @@ def chunk_json(text: str, file_path: str) -> list[dict]:
         # Try YAML
         try:
             import yaml
+
             data = yaml.safe_load(text)
         except Exception:
             # Try TOML
             try:
                 import tomllib
+
                 data = tomllib.loads(text)
             except Exception:
                 data = None
@@ -171,7 +139,7 @@ def _segments_to_chunks(segments: list[dict], file_path: str) -> list[dict]:
         separators=["\n\n", "\n", " ", ""],
     )
 
-    chunks = []
+    chunks: list[dict] = []
     byte_offset = 0
 
     for i, seg in enumerate(segments):
@@ -179,23 +147,8 @@ def _segments_to_chunks(segments: list[dict], file_path: str) -> list[dict]:
         seg_tokens = count_tokens(seg_text)
 
         if seg_tokens <= JSON_MAX_TOKENS:
-            chunks.append({
-                "chunk_id": make_chunk_id(file_path, byte_offset),
-                "file_path": file_path,
-                "file_type": "json",
-                "language": None,
-                "symbol": None,
-                "heading_path": None,
-                "json_path": seg["json_path"],
-                "chunk_index": len(chunks),
-                "token_count": seg_tokens,
-                "text": seg_text,
-            })
-        else:
-            # Sub-split oversized segments
-            parts = splitter.split_text(seg_text)
-            for part in parts:
-                chunks.append({
+            chunks.append(
+                {
                     "chunk_id": make_chunk_id(file_path, byte_offset),
                     "file_path": file_path,
                     "file_type": "json",
@@ -204,9 +157,28 @@ def _segments_to_chunks(segments: list[dict], file_path: str) -> list[dict]:
                     "heading_path": None,
                     "json_path": seg["json_path"],
                     "chunk_index": len(chunks),
-                    "token_count": count_tokens(part),
-                    "text": part,
-                })
+                    "token_count": seg_tokens,
+                    "text": seg_text,
+                }
+            )
+        else:
+            # Sub-split oversized segments
+            parts = splitter.split_text(seg_text)
+            for part in parts:
+                chunks.append(
+                    {
+                        "chunk_id": make_chunk_id(file_path, byte_offset),
+                        "file_path": file_path,
+                        "file_type": "json",
+                        "language": None,
+                        "symbol": None,
+                        "heading_path": None,
+                        "json_path": seg["json_path"],
+                        "chunk_index": len(chunks),
+                        "token_count": count_tokens(part),
+                        "text": part,
+                    }
+                )
                 byte_offset += len(part.encode("utf-8"))
                 continue
         byte_offset += len(seg_text.encode("utf-8"))
@@ -228,18 +200,20 @@ def _text_split_json(text: str, file_path: str) -> list[dict]:
     byte_offset = 0
 
     for i, part in enumerate(parts):
-        chunks.append({
-            "chunk_id": make_chunk_id(file_path, byte_offset),
-            "file_path": file_path,
-            "file_type": "json",
-            "language": None,
-            "symbol": None,
-            "heading_path": None,
-            "json_path": None,
-            "chunk_index": i,
-            "token_count": count_tokens(part),
-            "text": part,
-        })
+        chunks.append(
+            {
+                "chunk_id": make_chunk_id(file_path, byte_offset),
+                "file_path": file_path,
+                "file_type": "json",
+                "language": None,
+                "symbol": None,
+                "heading_path": None,
+                "json_path": None,
+                "chunk_index": i,
+                "token_count": count_tokens(part),
+                "text": part,
+            }
+        )
         byte_offset += len(part.encode("utf-8"))
 
     return chunks

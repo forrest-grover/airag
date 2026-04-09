@@ -16,31 +16,78 @@ from tqdm import tqdm
 
 from airag.chunking import chunk_file
 
-logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(
+    stream=sys.stderr,
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
 logger = logging.getLogger("airag")
 
 # Default gitignore-like patterns to skip
 SKIP_PATTERNS = {
-    ".git", "__pycache__", "node_modules", ".venv", "venv",
-    ".volumes", ".tox", ".mypy_cache", ".pytest_cache",
-    "dist", "build", "*.egg-info",
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    ".volumes",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    "dist",
+    "build",
+    "*.egg-info",
 }
 
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+
 SKIP_EXTENSIONS = {
-    ".pyc", ".pyo", ".so", ".dylib", ".dll", ".exe",
-    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp",
-    ".woff", ".woff2", ".ttf", ".eot",
-    ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar",
-    ".pdf", ".doc", ".docx", ".xls", ".xlsx",
-    ".lock", ".sum",
-    ".bin", ".dat", ".db", ".sqlite",
+    ".pyc",
+    ".pyo",
+    ".so",
+    ".dylib",
+    ".dll",
+    ".exe",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".ico",
+    ".webp",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".zip",
+    ".tar",
+    ".gz",
+    ".bz2",
+    ".7z",
+    ".rar",
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".lock",
+    ".sum",
+    ".bin",
+    ".dat",
+    ".db",
+    ".sqlite",
 }
 
 
 def should_skip(path: Path) -> bool:
     """Check if a file/dir should be skipped."""
     # Skip hidden files/dirs (except specific ones)
-    if path.name.startswith(".") and path.name not in (".gitignore", ".dockerignore", ".editorconfig", ".env"):
+    if path.name.startswith(".") and path.name not in (
+        ".gitignore",
+        ".dockerignore",
+        ".editorconfig",
+        ".env",
+    ):
         return True
     # Skip known dirs
     if path.is_dir() and path.name in SKIP_PATTERNS:
@@ -63,9 +110,16 @@ def scan_directory(corpus_dir: Path) -> list[Path]:
                 break
         if skip:
             continue
+        if item.is_symlink():
+            logger.warning("Skipping symlink: %s", item)
+            continue
         if item.is_file() and not should_skip(item):
             # Skip empty files
-            if item.stat().st_size > 0:
+            size = item.stat().st_size
+            if size > MAX_FILE_SIZE:
+                logger.warning("Skipping oversized file: %s (%d bytes)", item, size)
+                continue
+            if size > 0:
                 files.append(item)
     return files
 
@@ -131,7 +185,11 @@ def ingest(
         logger.info("No new or changed files. Nothing to do.")
         return
 
-    logger.info("Processing %d new/changed files (skipping %d unchanged)", len(new_files), len(files) - len(new_files))
+    logger.info(
+        "Processing %d new/changed files (skipping %d unchanged)",
+        len(new_files),
+        len(files) - len(new_files),
+    )
 
     # Process files: parse + chunk
     all_chunks = []
@@ -167,7 +225,9 @@ def ingest(
     logger.info("Upserting %d points to Qdrant ...", len(all_chunks))
     upsert_batch_size = 100
 
-    for i in tqdm(range(0, len(all_chunks), upsert_batch_size), desc="Upserting", file=sys.stderr):
+    for i in tqdm(
+        range(0, len(all_chunks), upsert_batch_size), desc="Upserting", file=sys.stderr
+    ):
         batch_chunks = all_chunks[i : i + upsert_batch_size]
         batch_vectors = all_vectors[i : i + upsert_batch_size]
 
@@ -175,11 +235,16 @@ def ingest(
         for j, (chunk, vector) in enumerate(zip(batch_chunks, batch_vectors)):
             # Use chunk_id as a UUID-like identifier
             # Qdrant needs int or UUID ids — use hash
-            point_id = int(hashlib.sha256(chunk["chunk_id"].encode()).hexdigest()[:16], 16) % (2**63)
+            point_id = int(
+                hashlib.sha256(chunk["chunk_id"].encode()).hexdigest()[:16], 16
+            ) % (2**63)
+
+            # Store paths relative to corpus dir to avoid leaking absolute paths
+            rel_path = os.path.relpath(chunk["file_path"], corpus_dir)
 
             payload = {
                 "chunk_id": chunk["chunk_id"],
-                "file_path": chunk["file_path"],
+                "file_path": rel_path,
                 "file_type": chunk["file_type"],
                 "language": chunk.get("language"),
                 "symbol": chunk.get("symbol"),
@@ -202,15 +267,23 @@ def ingest(
     elapsed = time.time() - start
     logger.info(
         "Ingestion complete: %d files, %d chunks, %.1f seconds",
-        len(new_files), len(all_chunks), elapsed,
+        len(new_files),
+        len(all_chunks),
+        elapsed,
     )
 
 
 def main():
     parser = argparse.ArgumentParser(description="Ingest documents into airag corpus")
-    parser.add_argument("--corpus-dir", type=Path, required=True, help="Directory to ingest")
-    parser.add_argument("--qdrant-url", default=os.environ.get("QDRANT_URL", "http://localhost:6333"))
-    parser.add_argument("--embed-url", default=os.environ.get("TEI_EMBED_URL", "http://localhost:8081"))
+    parser.add_argument(
+        "--corpus-dir", type=Path, required=True, help="Directory to ingest"
+    )
+    parser.add_argument(
+        "--qdrant-url", default=os.environ.get("QDRANT_URL", "http://localhost:6333")
+    )
+    parser.add_argument(
+        "--embed-url", default=os.environ.get("TEI_EMBED_URL", "http://localhost:8081")
+    )
     parser.add_argument("--collection", default="corpus")
     parser.add_argument("--batch-size", type=int, default=32)
     args = parser.parse_args()

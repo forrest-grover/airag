@@ -36,7 +36,9 @@ class Retriever:
             resp.raise_for_status()
             return resp.json()[0]
 
-    async def search(self, query: str, k: int = 5, filters: dict | None = None) -> list[dict]:
+    async def search(
+        self, query: str, k: int = 5, filters: dict | None = None
+    ) -> list[dict]:
         """Embed query, search Qdrant, rerank, return top-k chunks."""
         from qdrant_client.models import FieldCondition, Filter, MatchValue
 
@@ -48,10 +50,12 @@ class Retriever:
 
         qdrant_filter = None
         if filters:
-            conditions = []
+            conditions: list[FieldCondition] = []
             for field, value in filters.items():
-                conditions.append(FieldCondition(key=field, match=MatchValue(value=value)))
-            qdrant_filter = Filter(must=conditions)
+                conditions.append(
+                    FieldCondition(key=field, match=MatchValue(value=value))
+                )
+            qdrant_filter = Filter(must=conditions)  # type: ignore[arg-type]
 
         results = self.qdrant.query_points(
             collection_name=self._collection,
@@ -68,17 +72,19 @@ class Retriever:
         chunks = []
         for point in results.points:
             payload = point.payload or {}
-            chunks.append({
-                "chunk_id": payload.get("chunk_id", str(point.id)),
-                "score": point.score,
-                "file_path": payload.get("file_path", ""),
-                "file_type": payload.get("file_type", ""),
-                "language": payload.get("language"),
-                "symbol": payload.get("symbol"),
-                "heading_path": payload.get("heading_path"),
-                "section": payload.get("heading_path"),
-                "text": payload.get("text", ""),
-            })
+            chunks.append(
+                {
+                    "chunk_id": payload.get("chunk_id", str(point.id)),
+                    "score": point.score,
+                    "file_path": payload.get("file_path", ""),
+                    "file_type": payload.get("file_type", ""),
+                    "language": payload.get("language"),
+                    "symbol": payload.get("symbol"),
+                    "heading_path": payload.get("heading_path"),
+                    "section": payload.get("heading_path"),
+                    "text": payload.get("text", ""),
+                }
+            )
 
         # 4. Try reranking, fall back to dense-only if reranker unavailable
         try:
@@ -141,10 +147,11 @@ class Retriever:
             "text": payload.get("text", ""),
         }
 
-    async def list_sources(self) -> list[dict]:
+    async def list_sources(self, max_points: int = 100_000) -> list[dict]:
         """Return distinct source documents with chunk counts."""
         sources: dict[str, dict] = {}
         offset = None
+        total_scanned = 0
 
         while True:
             points, offset = self.qdrant.scroll(
@@ -164,6 +171,15 @@ class Retriever:
                         "chunk_count": 0,
                     }
                 sources[fp]["chunk_count"] += 1
+
+            total_scanned += len(points)
+            if total_scanned >= max_points:
+                logger.warning(
+                    "list_sources safety cap reached: scanned %d points (cap %d). Results may be incomplete.",
+                    total_scanned,
+                    max_points,
+                )
+                break
 
             if offset is None or not points:
                 break

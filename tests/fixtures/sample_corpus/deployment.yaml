@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-api
+  namespace: production
+  labels:
+    app: web-api
+    team: platform
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: web-api
+    spec:
+      containers:
+        - name: web-api
+          image: registry.internal/web-api:v2.4.1
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: web-api-secrets
+                  key: database-url
+            - name: LOG_LEVEL
+              value: "info"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      imagePullSecrets:
+        - name: registry-credentials

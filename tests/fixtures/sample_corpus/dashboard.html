@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Monitoring Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .metric-card { border: 1px solid #ddd; padding: 16px; margin: 8px; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <h1>System Monitoring Dashboard</h1>
+    <p>Real-time metrics for the production cluster. Updated every 30 seconds.</p>
+
+    <h2>Cluster Health</h2>
+    <div class="metric-card">
+        <h3>CPU Utilization</h3>
+        <p>Current average across all nodes: <strong>42%</strong></p>
+        <p>Peak today: 78% at 14:32 UTC</p>
+    </div>
+
+    <div class="metric-card">
+        <h3>Memory Usage</h3>
+        <p>Allocated: 48GB / 64GB (75%)</p>
+        <p>Swap usage: 0 bytes — healthy</p>
+    </div>
+
+    <h2>Application Metrics</h2>
+    <div class="metric-card">
+        <h3>Request Latency (p99)</h3>
+        <p>API Gateway: 120ms</p>
+        <p>Database queries: 45ms</p>
+        <p>External service calls: 230ms</p>
+    </div>
+
+    <div class="metric-card">
+        <h3>Error Rate</h3>
+        <p>Last hour: 0.02% (within SLA threshold of 0.1%)</p>
+        <p>Most common: 504 Gateway Timeout from payment service</p>
+    </div>
+
+    <h2>Alerts</h2>
+    <ul>
+        <li>WARN: Disk usage on node-3 at 85% — investigate log rotation</li>
+        <li>INFO: Scheduled maintenance window tomorrow 02:00-04:00 UTC</li>
+    </ul>
+</body>
+</html>

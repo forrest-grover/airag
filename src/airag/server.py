@@ -37,13 +37,27 @@ async def search_corpus(
     Returns:
         JSON string with ranked chunk results.
     """
+    ALLOWED_FILTER_KEYS = {"file_type", "language", "file_path"}
+
     try:
+        k = max(1, min(k, 50))
+
         if isinstance(filters, dict):
             filter_dict = filters
         elif isinstance(filters, str):
             filter_dict = json.loads(filters)
         else:
             filter_dict = None
+
+        if filter_dict is not None:
+            unknown = set(filter_dict.keys()) - ALLOWED_FILTER_KEYS
+            if unknown:
+                return json.dumps(
+                    {
+                        "error": f"Unknown filter keys: {sorted(unknown)}. Allowed: {sorted(ALLOWED_FILTER_KEYS)}"
+                    }
+                )
+
         results = await retriever.search(query, k=k, filters=filter_dict)
         return json.dumps(results, sort_keys=True, ensure_ascii=False)
     except Exception as e:

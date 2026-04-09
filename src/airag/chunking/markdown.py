@@ -3,7 +3,10 @@
 import logging
 import re
 
-from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
+from langchain_text_splitters import (
+    MarkdownHeaderTextSplitter,
+    RecursiveCharacterTextSplitter,
+)
 
 from airag.chunking.code import count_tokens, make_chunk_id
 
@@ -25,11 +28,13 @@ def extract_headings(text: str) -> list[dict]:
     for i, line in enumerate(lines):
         match = re.match(r"^(#{1,6})\s+(.+)$", line)
         if match:
-            headings.append({
-                "level": len(match.group(1)),
-                "title": match.group(2).strip(),
-                "line": i,
-            })
+            headings.append(
+                {
+                    "level": len(match.group(1)),
+                    "title": match.group(2).strip(),
+                    "line": i,
+                }
+            )
 
     return headings
 
@@ -105,25 +110,8 @@ def chunk_markdown(text: str, file_path: str) -> list[dict]:
         section_tokens = count_tokens(section_text)
 
         if section_tokens <= MD_MAX_TOKENS:
-            chunks.append({
-                "chunk_id": make_chunk_id(file_path, byte_offset),
-                "file_path": file_path,
-                "file_type": "markdown",
-                "language": None,
-                "symbol": None,
-                "heading_path": heading_path,
-                "json_path": None,
-                "chunk_index": chunk_index,
-                "token_count": section_tokens,
-                "text": section_text,
-            })
-            chunk_index += 1
-            byte_offset += len(section_text.encode("utf-8"))
-        else:
-            # Sub-split large section
-            sub_parts = sub_splitter.split_text(section_text)
-            for part in sub_parts:
-                chunks.append({
+            chunks.append(
+                {
                     "chunk_id": make_chunk_id(file_path, byte_offset),
                     "file_path": file_path,
                     "file_type": "markdown",
@@ -132,28 +120,55 @@ def chunk_markdown(text: str, file_path: str) -> list[dict]:
                     "heading_path": heading_path,
                     "json_path": None,
                     "chunk_index": chunk_index,
-                    "token_count": count_tokens(part),
-                    "text": part,
-                })
+                    "token_count": section_tokens,
+                    "text": section_text,
+                }
+            )
+            chunk_index += 1
+            byte_offset += len(section_text.encode("utf-8"))
+        else:
+            # Sub-split large section
+            sub_parts = sub_splitter.split_text(section_text)
+            for part in sub_parts:
+                chunks.append(
+                    {
+                        "chunk_id": make_chunk_id(file_path, byte_offset),
+                        "file_path": file_path,
+                        "file_type": "markdown",
+                        "language": None,
+                        "symbol": None,
+                        "heading_path": heading_path,
+                        "json_path": None,
+                        "chunk_index": chunk_index,
+                        "token_count": count_tokens(part),
+                        "text": part,
+                    }
+                )
                 chunk_index += 1
                 byte_offset += len(part.encode("utf-8"))
 
     # Handle edge case: empty or no-heading markdown
     if not chunks:
-        parts = sub_splitter.split_text(text) if count_tokens(text) > MD_MAX_TOKENS else [text]
+        parts = (
+            sub_splitter.split_text(text)
+            if count_tokens(text) > MD_MAX_TOKENS
+            else [text]
+        )
         for i, part in enumerate(parts):
-            chunks.append({
-                "chunk_id": make_chunk_id(file_path, byte_offset),
-                "file_path": file_path,
-                "file_type": "markdown",
-                "language": None,
-                "symbol": None,
-                "heading_path": None,
-                "json_path": None,
-                "chunk_index": i,
-                "token_count": count_tokens(part),
-                "text": part,
-            })
+            chunks.append(
+                {
+                    "chunk_id": make_chunk_id(file_path, byte_offset),
+                    "file_path": file_path,
+                    "file_type": "markdown",
+                    "language": None,
+                    "symbol": None,
+                    "heading_path": None,
+                    "json_path": None,
+                    "chunk_index": i,
+                    "token_count": count_tokens(part),
+                    "text": part,
+                }
+            )
             byte_offset += len(part.encode("utf-8"))
 
     return chunks

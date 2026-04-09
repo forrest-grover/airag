@@ -32,10 +32,12 @@ async def run_dense(retriever: Retriever, query: str, k: int = 10) -> list[dict]
     chunks = []
     for point in results.points:
         payload = point.payload or {}
-        chunks.append({
-            "chunk_id": payload.get("chunk_id", str(point.id)),
-            "score": point.score,
-        })
+        chunks.append(
+            {
+                "chunk_id": payload.get("chunk_id", str(point.id)),
+                "score": point.score,
+            }
+        )
 
     chunks.sort(key=lambda c: (-c["score"], c["chunk_id"]))
     return chunks[:k]
